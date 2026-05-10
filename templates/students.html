@@ -38,6 +38,21 @@
     </section>
 
     <section class="card">
+      <h2>批量导入学生照片</h2>
+      <p class="form-hint">
+        文件名格式：<strong>学号-姓名-专业-性别</strong>，扩展名仅 <code>.jpg</code> / <code>.jpeg</code> / <code>.png</code>。
+        示例：<code>20230001-张三-计算机科学与技术-男.jpg</code>、<code>20230002-李四-软件工程-女.png</code>
+      </p>
+      <p class="form-hint muted">已存在学号将<strong>更新</strong>姓名、专业、性别与人脸照片及特征；每张图单独提交，部分失败不影响其他文件。</p>
+      <div class="batch-import-toolbar">
+        <label>选择多张照片 <input type="file" id="batch-photos-input" accept=".jpg,.jpeg,.png,image/jpeg,image/png" multiple></label>
+        <button type="button" class="btn btn-primary" id="batch-import-submit">开始批量导入</button>
+      </div>
+      <p id="batch-import-summary" class="batch-import-summary" hidden></p>
+      <ul id="batch-import-results" class="batch-import-results" hidden></ul>
+    </section>
+
+    <section class="card">
       <h2>学生列表</h2>
       {% if students %}
         <div class="table-wrap">
@@ -48,6 +63,8 @@
                 <th>学号</th>
                 <th>姓名</th>
                 <th>班级</th>
+                <th>专业</th>
+                <th>性别</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -64,6 +81,8 @@
                   <td>{{ s.student_id }}</td>
                   <td>{{ s.name }}</td>
                   <td>{{ s.class_name or '—' }}</td>
+                  <td class="cell-wrap">{{ s.major or '—' }}</td>
+                  <td>{{ s.gender or '—' }}</td>
                   <td>
                     <form method="post" action="{{ url_for('students_delete', row_id=s.id) }}" class="inline-form" onsubmit="return confirm('确定删除该学生？将同时删除关联考勤/活动/情绪记录及照片文件。');">
                       <button type="submit" class="btn btn-danger">删除</button>
@@ -83,5 +102,74 @@
   <footer class="site-footer">
     <small>人脸特征以 BLOB 存储，识别时请使用与入库一致的特征管线。</small>
   </footer>
+
+  <script>
+    (function () {
+      var btn = document.getElementById("batch-import-submit");
+      var input = document.getElementById("batch-photos-input");
+      var summaryEl = document.getElementById("batch-import-summary");
+      var listEl = document.getElementById("batch-import-results");
+      if (!btn || !input) return;
+
+      btn.addEventListener("click", function () {
+        var files = input.files;
+        if (!files || !files.length) {
+          alert("请先选择要上传的照片。");
+          return;
+        }
+        var fd = new FormData();
+        for (var i = 0; i < files.length; i++) {
+          fd.append("photos", files[i]);
+        }
+        btn.disabled = true;
+        summaryEl.hidden = true;
+        listEl.hidden = true;
+        summaryEl.textContent = "正在上传并处理，请稍候…";
+        summaryEl.hidden = false;
+
+        fetch("{{ url_for('api_students_batch_import') }}", {
+          method: "POST",
+          body: fd,
+          credentials: "same-origin",
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            btn.disabled = false;
+            if (!j || typeof j.success === "undefined") {
+              summaryEl.textContent = "响应格式异常，请查看控制台或联系管理员。";
+              return;
+            }
+            if (!j.success) {
+              summaryEl.textContent = (j.message || j.code || "导入失败");
+              listEl.innerHTML = "";
+              listEl.hidden = true;
+              return;
+            }
+            var d = j.data || {};
+            var total = d.total != null ? d.total : 0;
+            var okc = d.success_count != null ? d.success_count : 0;
+            var bad = d.failure_count != null ? d.failure_count : 0;
+            summaryEl.textContent =
+              "共 " + total + " 个文件：成功 " + okc + "，失败 " + bad + "。" + (j.message || "");
+            var rows = d.results || [];
+            listEl.innerHTML = "";
+            for (var k = 0; k < rows.length; k++) {
+              var row = rows[k];
+              var li = document.createElement("li");
+              var text = row.display || (row.ok ? "成功" : "失败");
+              li.textContent = text;
+              li.className = row.ok ? "batch-ok" : "batch-fail";
+              listEl.appendChild(li);
+            }
+            listEl.hidden = rows.length === 0;
+          })
+          .catch(function (e) {
+            btn.disabled = false;
+            summaryEl.textContent = "请求失败：" + (e && e.message ? e.message : String(e));
+            listEl.hidden = true;
+          });
+      });
+    })();
+  </script>
 </body>
 </html>

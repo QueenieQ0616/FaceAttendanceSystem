@@ -33,7 +33,9 @@ STUDENTS_UPLOAD_DIR = UPLOAD_DIR / "students"
 ACTIVITIES_UPLOAD_DIR = UPLOAD_DIR / "activities"
 
 ALLOWED_PHOTO_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+ALLOWED_BATCH_STUDENT_PHOTO_EXT = {".jpg", ".jpeg", ".png"}
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_BATCH_STUDENT_FILES = 100
 MAX_GROUP_PHOTO_BYTES = 25 * 1024 * 1024
 MIN_LIVENESS_FRAMES = 10
 MAX_LIVENESS_FRAMES = 22
@@ -185,6 +187,8 @@ CREATE TABLE IF NOT EXISTS students (
     student_id TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     class_name TEXT,
+    major TEXT,
+    gender TEXT,
     face_image_path TEXT,
     face_embedding BLOB
 );
@@ -278,6 +282,7 @@ def init_db():
         conn.execute("PRAGMA foreign_keys = ON")
         _migrate_stale_schema(conn)
         conn.executescript(SCHEMA_SQL)
+        _ensure_students_major_gender_columns(conn)
         conn.execute(
             "UPDATE users SET role = 'teacher' WHERE username = 'teacher' "
             "AND role NOT IN ('teacher', 'student')"
@@ -287,6 +292,137 @@ def init_db():
         conn.commit()
     finally:
         conn.close()
+
+
+def _ensure_students_major_gender_columns(conn: sqlite3.Connection) -> None:
+    """为已有库补充 major / gender 列（CREATE TABLE IF NOT EXISTS 不会改已有表结构）。"""
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='students'")
+    if cur.fetchone() is None:
+        return
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(students)")}
+    if "major" not in cols:
+        conn.execute("ALTER TABLE students ADD COLUMN major TEXT")
+    if "gender" not in cols:
+        conn.execute("ALTER TABLE students ADD COLUMN gender TEXT")
+
+
+def _safe_unlink_upload_rel(rel_path: str | None) -> None:
+    if not rel_path:
+        return
+    fp = (UPLOAD_DIR / rel_path).resolve()
+    try:
+        fp.relative_to(UPLOAD_DIR.resolve())
+    except ValueError:
+        return
+    if fp.is_file():
+        try:
+            fp.unlink()
+        except OSError:
+            pass
+
+
+def _save_student_face_to_disk(student_id: str, photo, ext: str) -> tuple[Path, str]:
+    """
+    将上传流保存为唯一文件名，避免覆盖。
+    仅对学号段使用 secure_filename；原始中文文件名不参与磁盘文件名。
+    """
+    STUDENTS_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    id_part = secure_filename(student_id) or uuid.uuid4().hex[:8]
+    ext_l = ext.lower()
+    if ext_l not in ALLOWED_PHOTO_EXT:
+        ext_l = ".jpg"
+    fname = f"{id_part}_{uuid.uuid4().hex[:12]}{ext_l}"
+    save_path = STUDENTS_UPLOAD_DIR / fname
+    rel_store = f"students/{fname}"
+    photo.save(str(save_path))
+    return save_path, rel_store
+
+
+def _validate_upload_size(photo, max_bytes: int = MAX_UPLOAD_BYTES) -> str | None:
+    try:
+        photo.seek(0, os.SEEK_END)
+        size = photo.tell()
+        photo.seek(0)
+    except OSError:
+        return "无法读取上传文件。"
+    if size > max_bytes:
+        return f"文件过大（上限 {max_bytes // (1024 * 1024)}MB）。"
+    if size == 0:
+        return "文件为空。"
+    return None
+
+
+def _parse_batch_student_filename(original_filename: str) -> tuple[dict | None, str | None]:
+    """
+    解析「学号-姓名-专业-性别.扩展名」。
+    从原始 basename 解析（保留中文）；磁盘存储另用唯一文件名。
+    """
+    name_only = Path(original_filename or "").name
+    if not name_only or name_only in (".", ".."):
+        return None, "文件名为空或非法"
+    p = Path(name_only)
+    ext = p.suffix.lower()
+    if ext not in ALLOWED_BATCH_STUDENT_PHOTO_EXT:
+        return None, f"不支持的图片格式（仅 jpg / jpeg / png），当前：{ext or '无扩展名'}"
+    stem = p.stem.strip()
+    parts = stem.split("-")
+    if len(parts) != 4:
+        return None, "文件名格式错误：应为「学号-姓名-专业-性别」，用英文连字符 - 分成恰好 4 段"
+    student_id, name, major, gender = (x.strip() for x in parts)
+    if not student_id or not name or not major or not gender:
+        return None, "文件名格式错误：学号、姓名、专业、性别均不能为空"
+    return (
+        {
+            "student_id": student_id,
+            "name": name,
+            "major": major,
+            "gender": gender,
+            "ext": ext,
+            "original_filename": name_only,
+        },
+        None,
+    )
+
+
+def _ensure_login_user_for_student(db, student_id: str) -> None:
+    try:
+        db.execute(
+            "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+            (student_id, generate_password_hash(student_id), "student"),
+        )
+    except sqlite3.IntegrityError:
+        pass
+
+
+def _upsert_student_face_record(
+    db,
+    student_id: str,
+    name: str,
+    class_name: str | None,
+    major: str | None,
+    gender: str | None,
+    rel_store: str,
+    emb_blob: bytes,
+) -> None:
+    existing = db.execute(
+        "SELECT face_image_path FROM students WHERE student_id = ?",
+        (student_id,),
+    ).fetchone()
+    old_rel = existing["face_image_path"] if existing else None
+    if existing:
+        db.execute(
+            "UPDATE students SET name = ?, class_name = ?, major = ?, gender = ?, "
+            "face_image_path = ?, face_embedding = ? WHERE student_id = ?",
+            (name, class_name, major, gender, rel_store, emb_blob, student_id),
+        )
+    else:
+        db.execute(
+            "INSERT INTO students (student_id, name, class_name, major, gender, face_image_path, face_embedding) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (student_id, name, class_name, major, gender, rel_store, emb_blob),
+        )
+    if old_rel and old_rel != rel_store:
+        _safe_unlink_upload_rel(old_rel)
 
 
 def _strip_data_url(b64: str) -> str:
@@ -307,7 +443,7 @@ def _decode_b64_to_bgr(raw: bytes):
 def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-change-in-production")
-    app.config["MAX_CONTENT_LENGTH"] = 26 * 1024 * 1024
+    app.config["MAX_CONTENT_LENGTH"] = 85 * 1024 * 1024
 
     app.teardown_appcontext(close_db)
 
@@ -396,10 +532,138 @@ def create_app():
         if request.method == "POST":
             return _students_create(db)
         rows = db.execute(
-            "SELECT id, student_id, name, class_name, face_image_path "
+            "SELECT id, student_id, name, class_name, major, gender, face_image_path "
             "FROM students ORDER BY id DESC"
         ).fetchall()
         return render_template("students.html", students=rows)
+
+    @app.route("/api/students/batch-import", methods=["POST"])
+    def api_students_batch_import():
+        err = _teacher_required()
+        if err is not None:
+            return err
+        files = request.files.getlist("photos")
+        files = [f for f in files if f and getattr(f, "filename", None)]
+        if not files:
+            return api_err("NO_FILES", "未选择任何文件或文件名为空。", http_status=400)
+        if len(files) > MAX_BATCH_STUDENT_FILES:
+            return api_err(
+                "TOO_MANY_FILES",
+                f"单次最多上传 {MAX_BATCH_STUDENT_FILES} 个文件。",
+                http_status=400,
+            )
+
+        results: list[dict] = []
+        success_count = 0
+        failure_count = 0
+        from face_embed import extract_face_embedding_bytes
+
+        for photo in files:
+            orig = photo.filename or ""
+            base_result: dict = {"filename": Path(orig).name or orig, "ok": False}
+            try:
+                parsed, parse_err = _parse_batch_student_filename(orig)
+                if parse_err:
+                    base_result["reason"] = parse_err
+                    base_result["display"] = f"失败：{base_result['filename']} {parse_err}"
+                    failure_count += 1
+                    results.append(base_result)
+                    continue
+
+                sz_err = _validate_upload_size(photo)
+                if sz_err:
+                    base_result["reason"] = sz_err
+                    base_result["display"] = (
+                        f"失败：{parsed['student_id']}-{parsed['name']} {sz_err}"
+                    )
+                    failure_count += 1
+                    results.append(base_result)
+                    continue
+
+                save_path, rel_store = _save_student_face_to_disk(
+                    parsed["student_id"], photo, parsed["ext"]
+                )
+                try:
+                    emb_blob, _method = extract_face_embedding_bytes(save_path)
+                except ValueError as e:
+                    save_path.unlink(missing_ok=True)
+                    msg = str(e) or "检测不到人脸"
+                    base_result["reason"] = msg
+                    base_result["student_id"] = parsed["student_id"]
+                    base_result["name"] = parsed["name"]
+                    base_result["display"] = f"失败：{parsed['student_id']}-{parsed['name']} {msg}"
+                    failure_count += 1
+                    results.append(base_result)
+                    continue
+                except Exception as e:
+                    save_path.unlink(missing_ok=True)
+                    base_result["reason"] = f"特征提取异常：{e!s}"
+                    base_result["student_id"] = parsed["student_id"]
+                    base_result["name"] = parsed["name"]
+                    base_result["display"] = (
+                        f"失败：{parsed['student_id']}-{parsed['name']} 特征提取失败"
+                    )
+                    failure_count += 1
+                    results.append(base_result)
+                    continue
+
+                db = get_db()
+                try:
+                    _upsert_student_face_record(
+                        db,
+                        parsed["student_id"],
+                        parsed["name"],
+                        None,
+                        parsed["major"],
+                        parsed["gender"],
+                        rel_store,
+                        emb_blob,
+                    )
+                    _ensure_login_user_for_student(db, parsed["student_id"])
+                    db.commit()
+                except Exception as e:
+                    db.rollback()
+                    save_path.unlink(missing_ok=True)
+                    base_result["reason"] = f"数据库错误：{e!s}"
+                    base_result["student_id"] = parsed["student_id"]
+                    base_result["name"] = parsed["name"]
+                    base_result["display"] = (
+                        f"失败：{parsed['student_id']}-{parsed['name']} 写入数据库失败"
+                    )
+                    failure_count += 1
+                    results.append(base_result)
+                    continue
+
+                success_count += 1
+                results.append(
+                    {
+                        "filename": parsed["original_filename"],
+                        "ok": True,
+                        "student_id": parsed["student_id"],
+                        "name": parsed["name"],
+                        "major": parsed["major"],
+                        "gender": parsed["gender"],
+                        "reason": None,
+                        "display": f"成功：{parsed['student_id']}-{parsed['name']} 导入成功",
+                    }
+                )
+            except Exception as e:
+                base_result["reason"] = f"未预期错误：{e!s}"
+                base_result["display"] = f"失败：{base_result['filename']} {base_result['reason']}"
+                failure_count += 1
+                results.append(base_result)
+
+        total = len(files)
+        return api_ok(
+            data={
+                "total": total,
+                "success_count": success_count,
+                "failure_count": failure_count,
+                "results": results,
+            },
+            message=f"批量导入结束：成功 {success_count}，失败 {failure_count}。",
+            code="BATCH_STUDENT_IMPORT_DONE",
+        )
 
     @app.route("/students/<int:row_id>/delete", methods=["POST"])
     def students_delete(row_id):
@@ -972,18 +1236,11 @@ def _students_create(db):
     if ext not in ALLOWED_PHOTO_EXT:
         flash("照片仅支持 JPG、JPEG、PNG、WebP。", "error")
         return redirect(url_for("students_manage"))
-    photo.seek(0, os.SEEK_END)
-    size = photo.tell()
-    photo.seek(0)
-    if size > MAX_UPLOAD_BYTES:
-        flash("照片文件过大（上限 10MB）。", "error")
+    sz_err = _validate_upload_size(photo)
+    if sz_err:
+        flash(sz_err, "error")
         return redirect(url_for("students_manage"))
-    STUDENTS_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    id_part = secure_filename(student_id) or uuid.uuid4().hex[:8]
-    fname = f"{id_part}_{uuid.uuid4().hex[:10]}{ext}"
-    save_path = STUDENTS_UPLOAD_DIR / fname
-    rel_store = f"students/{fname}"
-    photo.save(str(save_path))
+    save_path, rel_store = _save_student_face_to_disk(student_id, photo, ext)
     try:
         from face_embed import extract_face_embedding_bytes
 
@@ -998,9 +1255,9 @@ def _students_create(db):
         return redirect(url_for("students_manage"))
     try:
         db.execute(
-            "INSERT INTO students (student_id, name, class_name, face_image_path, face_embedding) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (student_id, name, class_name or None, rel_store, emb_blob),
+            "INSERT INTO students (student_id, name, class_name, major, gender, face_image_path, face_embedding) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (student_id, name, class_name or None, None, None, rel_store, emb_blob),
         )
         try:
             db.execute(
