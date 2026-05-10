@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>学生人脸库</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <h1>学生人脸库</h1>
+    <p class="tagline">添加 / 查看 / 删除学生与人脸特征</p>
+  </header>
+
+  {% include 'includes/site_nav.html' %}
+
+  <main class="container wide">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flash-list">
+          {% for category, message in messages %}
+            <li class="flash flash-{{ category }}">{{ message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <section class="card">
+      <h2>添加学生</h2>
+      <p class="form-hint">上传照片保存至 <code>uploads/students</code>，系统将用 DeepFace（或 OpenCV 备用）提取特征写入 SQLite。</p>
+      <form class="stack-form" method="post" action="{{ url_for('students_manage') }}" enctype="multipart/form-data">
+        <label>学号 <input type="text" name="student_id" required placeholder="如 2021001" autocomplete="off"></label>
+        <label>姓名 <input type="text" name="name" required placeholder="学生姓名"></label>
+        <label>班级 <input type="text" name="class_name" placeholder="可选，如 计算机2101"></label>
+        <label>学生照片 <input type="file" name="photo" accept=".jpg,.jpeg,.png,.webp,image/*" required></label>
+        <button type="submit" class="btn btn-primary">保存并提取特征</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>学生列表</h2>
+      {% if students %}
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>照片</th>
+                <th>学号</th>
+                <th>姓名</th>
+                <th>班级</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for s in students %}
+                <tr>
+                  <td class="cell-thumb">
+                    {% if s.face_image_path %}
+                      <img class="thumb" src="{{ url_for('serve_upload', rel_path=s.face_image_path) }}" alt="" width="56" height="56" loading="lazy">
+                    {% else %}
+                      <span class="muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ s.student_id }}</td>
+                  <td>{{ s.name }}</td>
+                  <td>{{ s.class_name or '—' }}</td>
+                  <td>
+                    <form method="post" action="{{ url_for('students_delete', row_id=s.id) }}" class="inline-form" onsubmit="return confirm('确定删除该学生？将同时删除关联考勤/活动/情绪记录及照片文件。');">
+                      <button type="submit" class="btn btn-danger">删除</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="muted">暂无学生，请先在上方添加。</p>
+      {% endif %}
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <small>人脸特征以 BLOB 存储，识别时请使用与入库一致的特征管线。</small>
+  </footer>
+</body>
+</html>

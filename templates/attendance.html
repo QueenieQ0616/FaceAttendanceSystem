@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>摄像头考勤</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <h1>摄像头考勤</h1>
+    <p class="tagline">多帧动作活体（MediaPipe）+ 人脸识别</p>
+  </header>
+
+  {% include 'includes/site_nav.html' %}
+
+  <main class="container wide">
+    <div id="page-alert" class="page-alert" role="alert" hidden></div>
+    <section class="card">
+      <h2>动作活体提示</h2>
+      <p id="liveness-prompt" class="liveness-prompt">正在加载动作说明…</p>
+      <p class="form-hint">系统将连续采集约 3 秒视频帧并在<strong>后端</strong>用 MediaPipe 分析是否完成指定动作；<strong>未通过活体则不会考勤成功</strong>。</p>
+      <button type="button" id="btn-refresh-challenge" class="btn btn-secondary">换一条动作</button>
+    </section>
+
+    <section class="card">
+      <h2>摄像头</h2>
+      <p class="form-hint">请使用 <strong>Chrome / Edge</strong> 并允许摄像头；本地开发请访问 <code>127.0.0.1</code> 或 <code>localhost</code>。</p>
+      <div class="camera-row">
+        <video id="cam-preview" class="cam-video" playsinline autoplay muted></video>
+        <canvas id="cam-canvas" class="hidden-canvas" width="640" height="480"></canvas>
+      </div>
+      <div class="btn-row">
+        <button type="button" id="btn-start" class="btn btn-primary">启动摄像头</button>
+        <button type="button" id="btn-capture" class="btn btn-primary" disabled>开始活体采集并考勤</button>
+        <button type="button" id="btn-stop" class="btn" disabled>停止摄像头</button>
+      </div>
+      <p id="cam-status" class="hint" aria-live="polite"></p>
+    </section>
+
+    <section class="card">
+      <h2>本次结果</h2>
+      <div id="result-panel" class="result-panel muted">完成采集后，此处显示「活体检测通过/失败」及考勤信息。</div>
+    </section>
+
+    <section class="card">
+      <h2>最近记录（本页会话）</h2>
+      <ul id="history-list" class="history-list"></ul>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <small>活体通过后才会做人脸比对；仅识别成功时写入 <code>attendance</code>，并记录 <code>liveness_result</code>。</small>
+  </footer>
+
+  <script>
+    window.ATTENDANCE_API_URL = {{ url_for('api_attendance_capture') | tojson }};
+    window.LIVENESS_CHALLENGE_URL = {{ url_for('api_liveness_challenge') | tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='js/api_utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/attendance.js') }}"></script>
+</body>
+</html>
