@@ -1,6 +1,6 @@
 """
 班级合照：检测多个人脸并返回 BGR 裁剪图（按画面中从左到右排序）。
-优先 DeepFace.extract_faces（retinaface / opencv / mtcnn），失败则 OpenCV Haar 多脸检测。
+优先 DeepFace.extract_faces（多后端取检出人数最多者），失败则 OpenCV Haar 多脸检测。
 """
 from __future__ import annotations
 
@@ -40,14 +40,34 @@ def extract_group_face_crops_bgr(
     if image_bgr is None or image_bgr.size == 0:
         return []
     rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    scored: list[tuple[float, np.ndarray]] = []
+
+    def _crops_from_deepface_items(items: list) -> list[tuple[float, np.ndarray]]:
+        out: list[tuple[float, np.ndarray]] = []
+        for it in items[:max_faces]:
+            if isinstance(it, dict):
+                face = it.get("face")
+                area = it.get("facial_area") or {}
+            else:
+                face = it
+                area = {}
+            if face is None:
+                continue
+            frgb = _normalize_face_rgb(face)
+            if min(frgb.shape[:2]) < _MIN_FACE_SIDE:
+                continue
+            fbgr = cv2.cvtColor(frgb, cv2.COLOR_RGB2BGR)
+            cx = float(area.get("x", 0)) + float(area.get("w", 0)) * 0.5
+            out.append((cx, fbgr))
+        return out
 
     try:
         from deepface import DeepFace
 
-        items = None
-        for img_in in (image_bgr, rgb):
-            for backend in ("retinaface", "opencv", "mtcnn"):
+        # 神经网络检测优先用 RGB；勿在 retinaface 刚检出少量脸就停止，否则合照易卡在「个位数人脸」
+        # （DeepFace 的 RetinaFace 对 pip retina-face 使用 score 阈值 0.9，远景脸常被丢弃）。
+        best: list[tuple[float, np.ndarray]] = []
+        for img_in in (rgb, image_bgr):
+            for backend in ("mtcnn", "opencv", "retinaface"):
                 try:
                     items = DeepFace.extract_faces(
                         img_path=img_in,
@@ -55,31 +75,16 @@ def extract_group_face_crops_bgr(
                         enforce_detection=False,
                         align=True,
                     )
-                    if items:
-                        break
                 except Exception:
-                    items = None
                     continue
-            if items:
-                break
-        if items:
-            for it in items[:max_faces]:
-                if isinstance(it, dict):
-                    face = it.get("face")
-                    area = it.get("facial_area") or {}
-                else:
-                    face = it
-                    area = {}
-                if face is None:
+                if not items:
                     continue
-                frgb = _normalize_face_rgb(face)
-                if min(frgb.shape[:2]) < _MIN_FACE_SIDE:
-                    continue
-                fbgr = cv2.cvtColor(frgb, cv2.COLOR_RGB2BGR)
-                cx = float(area.get("x", 0)) + float(area.get("w", 0)) * 0.5
-                scored.append((cx, fbgr))
-            scored.sort(key=lambda t: t[0])
-            return [c for _, c in scored]
+                scored = _crops_from_deepface_items(items)
+                if len(scored) > len(best):
+                    best = scored
+        if best:
+            best.sort(key=lambda t: t[0])
+            return [c for _, c in best]
     except ImportError:
         pass
 

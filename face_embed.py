@@ -26,7 +26,7 @@ def _embedding_from_bgr(img: np.ndarray) -> tuple[bytes, str]:
 
         reps = DeepFace.represent(
             img_path=img,
-            model_name="Facenet",
+            model_name="Facenet512",
             enforce_detection=True,
             detector_backend="opencv",
         )
@@ -104,11 +104,12 @@ def extract_face_embedding_from_crop_bgr(img: np.ndarray) -> tuple[bytes, str]:
     try:
         from deepface import DeepFace
 
-        for det, enf in (("skip", False), ("opencv", False)):
+        # 必须与 _embedding_from_bgr / 学生入库使用的 Facenet512 维度一致，否则合照比对会全部被跳过。
+        for det, enf in (("skip", False), ("opencv", True)):
             try:
                 reps = DeepFace.represent(
                     img_path=img,
-                    model_name="Facenet",
+                    model_name="Facenet512",
                     enforce_detection=enf,
                     detector_backend=det,
                 )
@@ -119,7 +120,7 @@ def extract_face_embedding_from_crop_bgr(img: np.ndarray) -> tuple[bytes, str]:
                 emb = reps[0]["embedding"]
                 arr = np.asarray(emb, dtype=np.float32).ravel()
                 arr = arr / (float(np.linalg.norm(arr)) + 1e-8)
-                return arr.tobytes(), "deepface-facenet"
+                return arr.tobytes(), "deepface-facenet512"
             except Exception:
                 continue
     except ImportError:
