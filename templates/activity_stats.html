@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>活动参与频次</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <h1>活动参与频次统计</h1>
+    <p class="tagline">基于 activities 表 · 按学生汇总参与次数</p>
+  </header>
+
+  {% include 'includes/site_nav.html' %}
+
+  <main class="container wide">
+    <section class="card">
+      <h2>筛选条件</h2>
+      <form class="filter-form" method="get" action="{{ url_for('activity_stats') }}">
+        <div class="filter-grid">
+          <label>活动名称（模糊）
+            <input type="text" name="activity_name" value="{{ filters.activity_name }}" placeholder="如：运动会" autocomplete="off">
+          </label>
+          <label>开始日期
+            <input type="date" name="date_from" value="{{ filters.date_from }}">
+          </label>
+          <label>结束日期
+            <input type="date" name="date_to" value="{{ filters.date_to }}">
+          </label>
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="btn btn-primary">查询</button>
+        </div>
+      </form>
+      <p class="form-hint">当前筛选下共有 <strong>{{ total_records }}</strong> 条活动参与记录，涉及 <strong>{{ student_count }}</strong> 名学生（去重）。</p>
+    </section>
+
+    <section class="card">
+      <h2>柱状图（ECharts）</h2>
+      <p class="form-hint">横轴为学号；悬停查看姓名与次数。人数较多时可拖动底部滑块缩放。</p>
+      <div id="activity-chart" class="echarts-box"></div>
+    </section>
+
+    <section class="card">
+      <h2>统计表格</h2>
+      {% if rows %}
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>学号</th>
+                <th>姓名</th>
+                <th>活动参与次数</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in rows %}
+                <tr>
+                  <td>{{ r.student_id }}</td>
+                  <td>{{ r.name }}</td>
+                  <td>{{ r.cnt }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="muted">无数据。请先上传合照识别或调整筛选条件。</p>
+      {% endif %}
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <small>统计口径：每位学生在当前筛选条件下的 <code>activities</code> 记录条数。</small>
+  </footer>
+
+  <script id="stats-data" type="application/json">{{ chart_rows | tojson }}</script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <script src="{{ url_for('static', filename='js/activity_stats.js') }}"></script>
+</body>
+</html>

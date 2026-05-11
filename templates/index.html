@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>班级考勤系统</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <h1>班级考勤系统</h1>
+    <p class="tagline">Flask · SQLite · 原生前端</p>
+  </header>
+
+  {% include 'includes/site_nav.html' %}
+
+  <main class="container">
+    <section class="card">
+      <h2>欢迎使用</h2>
+      {% if session.get('role') == 'teacher' %}
+        <p>您已以<strong>教师</strong>身份登录，可管理学生人脸库、查看全班考勤与情绪统计、上传合照及查看活动参与频次。</p>
+        <p><a class="inline-link" href="{{ url_for('students_manage') }}">学生人脸库管理</a> ·
+          <a class="inline-link" href="{{ url_for('attendance_records') }}">考勤记录</a> ·
+          <a class="inline-link" href="{{ url_for('emotion_stats') }}">情绪统计</a> ·
+          <a class="inline-link" href="{{ url_for('activity_stats') }}">活动频次</a> ·
+          <a class="inline-link" href="{{ url_for('activity_group_photo_page') }}">合照识别</a></p>
+      {% else %}
+        <p>您已以<strong>学生</strong>身份登录，可进行本人摄像头考勤，并查看<strong>个人</strong>考勤与情绪记录。</p>
+        <p><a class="inline-link" href="{{ url_for('attendance_page') }}">摄像头考勤</a> ·
+          <a class="inline-link" href="{{ url_for('attendance_records') }}">我的考勤记录</a> ·
+          <a class="inline-link" href="{{ url_for('emotion_stats') }}">我的情绪统计</a></p>
+      {% endif %}
+      <p id="client-hint" class="hint"></p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <small>数据库文件：<code>database/attendance.db</code> · 上传目录：<code>uploads/</code></small>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>情绪统计</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <h1>情绪统计</h1>
+    <p class="tagline">考勤成功时写入的 DeepFace 主导情绪（来源：emotion_records）</p>
+  </header>
+
+  {% include 'includes/site_nav.html' %}
+
+  <main class="container wide">
+    <section class="card">
+      {% if student_only %}
+        <p class="form-hint"><strong>当前为学生视图</strong>：仅展示与您学号关联的情绪记录。</p>
+      {% endif %}
+      <p>考勤成功记录数（情绪样本）：<strong>{{ total }}</strong></p>
+      <p class="form-hint">仅统计 <code>source = 'attendance'</code> 的情绪记录，与考勤成功一一对应。</p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="{{ url_for('emotion_stats', group='student') }}">按学生统计</a>
+        <a class="btn btn-primary" href="{{ url_for('emotion_stats', group='date') }}">按日期统计</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>{% if group == 'date' %}按日期 × 情绪{% else %}按学生 × 情绪{% endif %}</h2>
+      {% if rows %}
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                {% if group == 'date' %}
+                  <th>日期</th>
+                  <th>情绪类型</th>
+                  <th>次数</th>
+                {% else %}
+                  <th>学号</th>
+                  <th>姓名</th>
+                  <th>情绪类型</th>
+                  <th>次数</th>
+                {% endif %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in rows %}
+                <tr>
+                  {% if group == 'date' %}
+                    <td>{{ r.day }}</td>
+                    <td>{{ r.emotion }}</td>
+                    <td>{{ r.cnt }}</td>
+                  {% else %}
+                    <td>{{ r.student_id }}</td>
+                    <td>{{ r.name }}</td>
+                    <td>{{ r.emotion }}</td>
+                    <td>{{ r.cnt }}</td>
+                  {% endif %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="muted">暂无数据。请先完成几次成功的摄像头考勤。</p>
+      {% endif %}
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <small>情绪由 DeepFace <code>dominant_emotion</code> 写入 <code>attendance.emotion</code> 与 <code>emotion_records</code>。</small>
+  </footer>
+</body>
+</html>

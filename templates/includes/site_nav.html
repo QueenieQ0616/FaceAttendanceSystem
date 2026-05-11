@@ -1,0 +1,27 @@
+<nav class="nav-bar">
+  <div class="nav-bar-main">
+    <a href="{{ url_for('index') }}">首页</a>
+    <span class="nav-sep">|</span>
+    {% if session.get('role') == 'teacher' %}
+      <a href="{{ url_for('students_manage') }}">学生人脸库</a>
+      <span class="nav-sep">|</span>
+      <a href="{{ url_for('attendance_records') }}">考勤记录</a>
+      <span class="nav-sep">|</span>
+      <a href="{{ url_for('emotion_stats') }}">情绪统计</a>
+      <span class="nav-sep">|</span>
+      <a href="{{ url_for('activity_stats') }}">活动频次</a>
+      <span class="nav-sep">|</span>
+      <a href="{{ url_for('activity_group_photo_page') }}">合照识别</a>
+    {% else %}
+      <a href="{{ url_for('attendance_page') }}">摄像头考勤</a>
+      <span class="nav-sep">|</span>
+      <a href="{{ url_for('attendance_records') }}">我的考勤记录</a>
+      <span class="nav-sep">|</span>
+      <a href="{{ url_for('emotion_stats') }}">我的情绪统计</a>
+    {% endif %}
+  </div>
+  <div class="nav-user">
+    <span class="nav-role">{{ session.get('username', '') }}（{{ session.get('role', '') }}）</span>
+    <a href="{{ url_for('logout') }}">退出</a>
+  </div>
+</nav>

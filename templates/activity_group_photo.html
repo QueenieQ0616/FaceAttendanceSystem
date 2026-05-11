@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>合照学生识别</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <h1>班级活动合照识别</h1>
+    <p class="tagline">上传合照 · 多脸检测 · 与人脸库比对 · 写入活动参与记录</p>
+  </header>
+
+  {% include 'includes/site_nav.html' %}
+
+  <main class="container wide">
+    <div id="page-alert" class="page-alert" role="alert" hidden></div>
+    <section class="card">
+      <h2>上传合照</h2>
+      <p class="form-hint">支持 JPG/PNG/WebP，单文件最大 25MB。后端使用 DeepFace 多脸检测（retinaface/opencv/mtcnn）与 OpenCV 备用，默认可处理至多 <strong>50</strong> 张人脸，满足 10 人以上班级合照。</p>
+      <form id="group-form" class="stack-form wide-form">
+        <label>活动名称（将写入 activities）
+          <input type="text" id="activity_name" name="activity_name" required placeholder="如：春季运动会合影" autocomplete="off">
+        </label>
+        <label>班级活动合照
+          <input type="file" id="photo" name="photo" accept=".jpg,.jpeg,.png,.webp,image/*" required>
+        </label>
+        <button type="submit" class="btn btn-primary" id="btn-submit">开始识别并保存</button>
+      </form>
+      <p id="group-status" class="hint" aria-live="polite"></p>
+    </section>
+
+    <section class="card" id="result-section" hidden>
+      <h2>识别结果</h2>
+      <p id="result-summary" class="form-hint"></p>
+      <p id="preview-wrap" class="preview-wrap"></p>
+      <div class="table-wrap">
+        <table class="data-table" id="result-table">
+          <thead>
+            <tr>
+              <th>学号</th>
+              <th>姓名</th>
+              <th>相似度</th>
+              <th>情绪</th>   <!-- 新增情绪列 -->
+            </tr>
+          </thead>
+          <tbody id="result-tbody"></tbody>
+        </table>
+      </div>
+      <p id="result-empty" class="muted" hidden>未识别到库中学生（可提高合照清晰度或调低环境变量 GROUP_FACE_THRESHOLD）。</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <small>识别成功的学生将写入 <code>activities</code> 表，合照保存在 <code>uploads/activities/</code>。</small>
+  </footer>
+
+  <script>
+    window.GROUP_PHOTO_API_URL = "{{ url_for('api_activity_group_photo') }}";
+  </script>
+  <script src="{{ url_for('static', filename='js/api_utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/activity_group.js') }}"></script>
+</body>
+</html>

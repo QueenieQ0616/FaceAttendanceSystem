@@ -1,0 +1,49 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+.venv310/
+venv/
+env/
+myenv/
+*.egg-info/
+
+# Conda
+conda-meta/
+
+# Large install packages
+*.whl
+*.zip
+*.tar.gz
+*.7z
+*.rar
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads
+uploads/
+static/uploads/
+
+# DeepFace / TensorFlow / model cache
+.keras/
+.deepface/
+deepface_weights/
+models/*.h5
+models/*.pth
+models/*.pt
+models/*.onnx
+
+# IDE
+.vscode/
+.idea/
+
+# System
+.DS_Store
+Thumbs.db
